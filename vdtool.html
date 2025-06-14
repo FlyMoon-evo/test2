@@ -1,0 +1,1477 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>视频抽帧工具</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/ffmpeg.js@4.4.1/ffmpeg.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#165DFF',
+            secondary: '#36CFC9',
+            neutral: '#F5F7FA',
+            dark: '#1D2129',
+          },
+          fontFamily: {
+            inter: ['Inter', 'sans-serif'],
+          },
+        },
+      }
+    }
+  </script>
+  
+  <style type="text/tailwindcss">
+    @layer utilities {
+      .content-auto {
+        content-visibility: auto;
+      }
+      .text-shadow {
+        text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      }
+      .transition-all-300 {
+        transition: all 300ms ease-in-out;
+      }
+      .shadow-soft {
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05);
+      }
+    }
+  </style>
+</head>
+<body class="bg-neutral font-inter text-dark min-h-screen flex flex-col">
+  <!-- 顶部导航栏 -->
+  <header class="bg-white shadow-md fixed w-full z-50 transition-all duration-300" id="navbar">
+    <div class="container mx-auto px-4 py-3 flex items-center justify-between">
+      <div class="flex items-center space-x-2">
+        <i class="fa fa-film text-primary text-2xl"></i>
+        <h1 class="text-xl md:text-2xl font-bold text-dark">视频抽帧工具</h1>
+      </div>
+      <nav class="hidden md:flex items-center space-x-6">
+        <a href="#upload" class="text-dark hover:text-primary transition-all-300">上传</a>
+        <a href="#extract" class="text-dark hover:text-primary transition-all-300">抽帧</a>
+        <a href="#results" class="text-dark hover:text-primary transition-all-300">结果</a>
+        <a href="#stats" class="text-dark hover:text-primary transition-all-300">统计</a>
+      </nav>
+      <button class="md:hidden text-dark text-xl" id="mobile-menu-button">
+        <i class="fa fa-bars"></i>
+      </button>
+    </div>
+    <!-- 移动端菜单 -->
+    <div class="md:hidden hidden bg-white shadow-lg absolute w-full" id="mobile-menu">
+      <div class="container mx-auto px-4 py-2 flex flex-col space-y-3">
+        <a href="#upload" class="py-2 px-4 hover:bg-neutral rounded-lg transition-all-300">上传</a>
+        <a href="#extract" class="py-2 px-4 hover:bg-neutral rounded-lg transition-all-300">抽帧</a>
+        <a href="#results" class="py-2 px-4 hover:bg-neutral rounded-lg transition-all-300">结果</a>
+        <a href="#stats" class="py-2 px-4 hover:bg-neutral rounded-lg transition-all-300">统计</a>
+      </div>
+    </div>
+  </header>
+
+  <!-- 主内容区 -->
+  <main class="flex-grow pt-20 pb-10">
+    <div class="container mx-auto px-4">
+      <!-- 上传区域 -->
+      <section id="upload" class="mb-12 bg-white rounded-xl shadow-soft p-6 md:p-8 transform transition-all duration-500 hover:shadow-lg">
+        <h2 class="text-2xl md:text-3xl font-bold mb-6 flex items-center">
+          <i class="fa fa-cloud-upload text-primary mr-3"></i>
+          上传视频
+        </h2>
+        <div class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center transition-all duration-300 hover:border-primary" id="drop-area">
+          <input type="file" id="file-input" accept="video/*" class="hidden">
+          <label for="file-input" class="cursor-pointer">
+            <i class="fa fa-film text-5xl text-gray-400 mb-4 block transition-all duration-300 hover:text-primary"></i>
+            <p class="text-lg text-gray-600 mb-2">拖放视频文件到这里，或点击选择文件</p>
+            <p class="text-sm text-gray-400 mb-6">支持 MP4, MOV, AVI, WebM 等格式</p>
+            <button class="bg-primary hover:bg-primary/90 text-white font-medium py-3 px-6 rounded-lg transition-all duration-300 shadow-md hover:shadow-lg transform hover:-translate-y-0.5">
+              选择视频文件
+            </button>
+          </label>
+        </div>
+        <div class="mt-6 hidden" id="file-info">
+          <div class="flex items-center justify-between bg-gray-50 p-4 rounded-lg">
+            <div class="flex items-center space-x-4">
+              <i class="fa fa-file-video-o text-primary text-2xl"></i>
+              <div>
+                <p class="font-medium" id="file-name">视频文件名.mp4</p>
+                <p class="text-sm text-gray-500" id="file-size">0 MB</p>
+              </div>
+            </div>
+            <button class="text-red-500 hover:text-red-700 transition-all duration-300" id="remove-file">
+              <i class="fa fa-times-circle text-xl"></i>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 抽帧控制区域 -->
+      <section id="extract" class="mb-12 bg-white rounded-xl shadow-soft p-6 md:p-8 transform transition-all duration-500 hover:shadow-lg">
+        <h2 class="text-2xl md:text-3xl font-bold mb-6 flex items-center">
+          <i class="fa fa-scissors text-primary mr-3"></i>
+          抽帧设置
+        </h2>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+          <div>
+            <label for="fps" class="block text-gray-700 font-medium mb-2">抽帧方式</label>
+            <div class="grid grid-cols-2 gap-4">
+              <div class="relative">
+                <input type="radio" id="fps-mode" name="extract-mode" value="fps" checked class="hidden peer">
+                <label for="fps-mode" class="block border-2 border-gray-300 rounded-lg p-4 cursor-pointer peer-checked:border-primary peer-checked:bg-primary/5 transition-all duration-300 hover:border-primary/70">
+                  <div class="flex items-center">
+                    <div class="w-5 h-5 rounded-full border-2 border-gray-300 flex items-center justify-center mr-3 peer-checked:border-primary">
+                      <div class="w-3 h-3 rounded-full bg-primary opacity-0 peer-checked:opacity-100 transition-opacity duration-300"></div>
+                    </div>
+                    <span class="font-medium">按帧率</span>
+                  </div>
+                  <p class="text-sm text-gray-500 mt-2">指定每秒抽取的帧数</p>
+                </label>
+              </div>
+              <div class="relative">
+                <input type="radio" id="interval-mode" name="extract-mode" value="interval" class="hidden peer">
+                <label for="interval-mode" class="block border-2 border-gray-300 rounded-lg p-4 cursor-pointer peer-checked:border-primary peer-checked:bg-primary/5 transition-all duration-300 hover:border-primary/70">
+                  <div class="flex items-center">
+                    <div class="w-5 h-5 rounded-full border-2 border-gray-300 flex items-center justify-center mr-3 peer-checked:border-primary">
+                      <div class="w-3 h-3 rounded-full bg-primary opacity-0 peer-checked:opacity-100 transition-opacity duration-300"></div>
+                    </div>
+                    <span class="font-medium">按间隔</span>
+                  </div>
+                  <p class="text-sm text-gray-500 mt-2">指定每隔多少帧抽取一帧</p>
+                </label>
+              </div>
+            </div>
+          </div>
+          
+          <div id="fps-settings" class="col-span-1 md:col-span-2">
+            <label for="fps-value" class="block text-gray-700 font-medium mb-2">每秒抽取帧数</label>
+            <div class="flex items-center space-x-4">
+              <input type="range" id="fps-value" min="1" max="60" value="1" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-primary">
+              <span class="text-lg font-medium" id="fps-display">1 FPS</span>
+            </div>
+            <p class="text-sm text-gray-500 mt-2">数值越高，抽取的帧越多，处理时间和存储空间需求也越大</p>
+          </div>
+          
+          <div id="interval-settings" class="col-span-1 md:col-span-2 hidden">
+            <label for="interval-value" class="block text-gray-700 font-medium mb-2">抽帧间隔</label>
+            <div class="flex items-center space-x-4">
+              <input type="range" id="interval-value" min="1" max="100" value="10" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-primary">
+              <span class="text-lg font-medium" id="interval-display">10 帧</span>
+            </div>
+            <p class="text-sm text-gray-500 mt-2">每隔指定帧数抽取一帧，数值越大，抽取的帧越少</p>
+          </div>
+        </div>
+        
+        <div class="flex flex-col sm:flex-row gap-4">
+          <button id="start-extraction" class="bg-primary hover:bg-primary/90 text-white font-medium py-3 px-8 rounded-lg transition-all duration-300 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 flex-1 flex items-center justify-center">
+            <i class="fa fa-play mr-2"></i>
+            开始抽帧
+          </button>
+          <button id="cancel-extraction" class="bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium py-3 px-8 rounded-lg transition-all duration-300 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 flex-1 flex items-center justify-center hidden">
+            <i class="fa fa-stop mr-2"></i>
+            取消抽帧
+          </button>
+        </div>
+        
+        <!-- 进度条 -->
+        <div class="mt-6 hidden" id="extraction-progress">
+          <div class="flex justify-between items-center mb-2">
+            <span class="font-medium">抽帧进度</span>
+            <span class="text-sm text-gray-500" id="progress-percentage">0%</span>
+          </div>
+          <div class="w-full bg-gray-200 rounded-full h-2.5">
+            <div class="bg-primary h-2.5 rounded-full transition-all duration-300" id="progress-bar" style="width: 0%"></div>
+          </div>
+          <div class="mt-3 flex justify-between text-sm text-gray-500">
+            <span id="frames-extracted">已抽取: 0 帧</span>
+            <span id="est-time-remaining">剩余时间: 计算中...</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 结果展示区域 -->
+      <section id="results" class="mb-12 bg-white rounded-xl shadow-soft p-6 md:p-8 transform transition-all duration-500 hover:shadow-lg">
+        <div class="flex flex-col md:flex-row md:items-center justify-between mb-6">
+          <h2 class="text-2xl md:text-3xl font-bold flex items-center">
+            <i class="fa fa-th-large text-primary mr-3"></i>
+            抽帧结果
+          </h2>
+          <div class="mt-4 md:mt-0 flex flex-wrap gap-3">
+            <div class="relative">
+              <select id="view-mode" class="appearance-none bg-gray-50 border border-gray-300 text-gray-700 py-2 pl-4 pr-10 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50">
+                <option value="grid">网格视图</option>
+                <option value="list">列表视图</option>
+              </select>
+              <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
+                <i class="fa fa-chevron-down text-xs"></i>
+              </div>
+            </div>
+            <button id="select-all" class="bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 px-4 rounded-lg transition-all duration-300 flex items-center">
+              <i class="fa fa-check-square-o mr-2"></i>
+              全选
+            </button>
+            <button id="download-selected" class="bg-secondary hover:bg-secondary/90 text-white py-2 px-4 rounded-lg transition-all duration-300 flex items-center">
+              <i class="fa fa-download mr-2"></i>
+              下载选中
+            </button>
+          </div>
+        </div>
+        
+        <!-- 结果为空状态 -->
+        <div id="no-results" class="py-16 text-center">
+          <i class="fa fa-film text-gray-300 text-6xl mb-4"></i>
+          <h3 class="text-xl font-medium text-gray-500 mb-2">暂无抽帧结果</h3>
+          <p class="text-gray-400 max-w-md mx-auto">请上传视频并开始抽帧，抽帧完成后将在这里显示所有提取的帧</p>
+        </div>
+        
+        <!-- 结果加载中状态 -->
+        <div id="loading-results" class="py-16 text-center hidden">
+          <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-primary mb-4"></div>
+          <h3 class="text-xl font-medium text-gray-700">正在处理视频...</h3>
+          <p class="text-gray-500 mt-2">请稍候，正在提取视频帧</p>
+        </div>
+        
+        <!-- 结果展示 -->
+        <div id="frame-results" class="hidden">
+          <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4" id="frame-grid">
+            <!-- 帧图片将在这里动态生成 -->
+          </div>
+          
+          <!-- 分页控制 -->
+          <div class="mt-8 flex justify-between items-center">
+            <div class="text-sm text-gray-500">
+              显示 <span id="shown-frames">0</span> 帧，共 <span id="total-frames">0</span> 帧
+            </div>
+            <div class="flex space-x-2">
+              <button id="prev-page" class="bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 px-4 rounded-lg transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                <i class="fa fa-chevron-left"></i>
+              </button>
+              <button id="next-page" class="bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 px-4 rounded-lg transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                <i class="fa fa-chevron-right"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 统计图表区域 -->
+      <section id="stats" class="mb-12 bg-white rounded-xl shadow-soft p-6 md:p-8 transform transition-all duration-500 hover:shadow-lg">
+        <h2 class="text-2xl md:text-3xl font-bold mb-6 flex items-center">
+          <i class="fa fa-bar-chart text-primary mr-3"></i>
+          抽帧统计
+        </h2>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+          <div class="bg-gray-50 p-4 rounded-lg">
+            <h3 class="font-medium mb-4">视频信息</h3>
+            <div class="space-y-3">
+              <div class="flex justify-between">
+                <span class="text-gray-600">视频时长</span>
+                <span class="font-medium" id="video-duration">-</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-gray-600">原始帧率</span>
+                <span class="font-medium" id="original-fps">-</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-gray-600">视频分辨率</span>
+                <span class="font-medium" id="video-resolution">-</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-gray-600">总帧数</span>
+                <span class="font-medium" id="total-frames-count">-</span>
+              </div>
+            </div>
+          </div>
+          
+          <div class="bg-gray-50 p-4 rounded-lg">
+            <h3 class="font-medium mb-4">抽帧信息</h3>
+            <div class="space-y-3">
+              <div class="flex justify-between">
+                <span class="text-gray-600">抽帧模式</span>
+                <span class="font-medium" id="extraction-mode">-</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-gray-600">抽取帧率</span>
+                <span class="font-medium" id="extracted-fps">-</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-gray-600">实际抽取帧数</span>
+                <span class="font-medium" id="extracted-frames-count">-</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-gray-600">处理时间</span>
+                <span class="font-medium" id="processing-time">-</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div class="bg-gray-50 p-4 rounded-lg">
+            <h3 class="font-medium mb-4">帧大小分布</h3>
+            <div class="h-64">
+              <canvas id="frame-size-chart"></canvas>
+            </div>
+          </div>
+          
+          <div class="bg-gray-50 p-4 rounded-lg">
+            <h3 class="font-medium mb-4">抽帧速度</h3>
+            <div class="h-64">
+              <canvas id="extraction-speed-chart"></canvas>
+            </div>
+          </div>
+        </div>
+        
+        <!-- 批量操作 -->
+        <div class="mt-8 flex flex-col sm:flex-row gap-4">
+          <button id="download-all-zip" class="bg-primary hover:bg-primary/90 text-white font-medium py-3 px-6 rounded-lg transition-all duration-300 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 flex items-center justify-center">
+            <i class="fa fa-file-zip-o mr-2"></i>
+            打包为 ZIP 下载
+          </button>
+          <button id="download-all-7z" class="bg-secondary hover:bg-secondary/90 text-white font-medium py-3 px-6 rounded-lg transition-all duration-300 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 flex items-center justify-center">
+            <i class="fa fa-archive mr-2"></i>
+            打包为 7Z 下载
+          </button>
+          <button id="reset-all" class="bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium py-3 px-6 rounded-lg transition-all duration-300 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 flex items-center justify-center">
+            <i class="fa fa-refresh mr-2"></i>
+            重置所有
+          </button>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- 页脚 -->
+  <footer class="bg-dark text-white py-6">
+    <div class="container mx-auto px-4">
+      <div class="flex flex-col md:flex-row justify-between items-center">
+        <div class="mb-4 md:mb-0">
+          <div class="flex items-center space-x-2">
+            <i class="fa fa-film text-primary text-xl"></i>
+            <span class="font-bold text-lg">视频抽帧工具</span>
+          </div>
+          <p class="text-gray-400 text-sm mt-1">高效、无损地从视频中提取每一帧</p>
+        </div>
+        <div class="flex space-x-6">
+          <a href="#" class="text-gray-400 hover:text-white transition-all duration-300">
+            <i class="fa fa-github text-xl"></i>
+          </a>
+          <a href="#" class="text-gray-400 hover:text-white transition-all duration-300">
+            <i class="fa fa-twitter text-xl"></i>
+          </a>
+          <a href="#" class="text-gray-400 hover:text-white transition-all duration-300">
+            <i class="fa fa-linkedin text-xl"></i>
+          </a>
+        </div>
+      </div>
+      <div class="mt-6 pt-6 border-t border-gray-700 text-center text-gray-400 text-sm">
+        <p>&copy; 2025 视频抽帧工具 | 保留所有权利</p>
+      </div>
+    </div>
+  </footer>
+
+  <!-- 模态框 -->
+  <div id="frame-modal" class="fixed inset-0 bg-black bg-opacity-75 z-50 hidden flex items-center justify-center">
+    <div class="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-auto m-4">
+      <div class="p-4 flex justify-between items-center border-b">
+        <h3 class="font-bold text-lg" id="modal-title">帧详情</h3>
+        <button id="close-modal" class="text-gray-500 hover:text-gray-700 transition-all duration-300">
+          <i class="fa fa-times text-xl"></i>
+        </button>
+      </div>
+      <div class="p-6">
+        <div class="bg-gray-100 rounded-lg p-4 mb-6">
+          <img id="modal-image" src="" alt="帧图片" class="max-w-full mx-auto">
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <h4 class="font-medium mb-2">帧信息</h4>
+            <div class="space-y-2">
+              <div class="flex justify-between">
+                <span class="text-gray-600">帧编号</span>
+                <span class="font-medium" id="modal-frame-number">-</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-gray-600">时间戳</span>
+                <span class="font-medium" id="modal-timestamp">-</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-gray-600">分辨率</span>
+                <span class="font-medium" id="modal-resolution">-</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-gray-600">文件大小</span>
+                <span class="font-medium" id="modal-size">-</span>
+              </div>
+            </div>
+          </div>
+          <div>
+            <h4 class="font-medium mb-2">操作</h4>
+            <div class="space-y-3">
+              <button id="download-single-frame" class="w-full bg-primary hover:bg-primary/90 text-white py-2 px-4 rounded-lg transition-all duration-300 flex items-center justify-center">
+                <i class="fa fa-download mr-2"></i>
+                下载此帧
+              </button>
+              <button id="set-as-thumbnail" class="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 px-4 rounded-lg transition-all duration-300 flex items-center justify-center">
+                <i class="fa fa-image mr-2"></i>
+                设置为缩略图
+              </button>
+              <button id="delete-frame" class="w-full bg-red-100 hover:bg-red-200 text-red-700 py-2 px-4 rounded-lg transition-all duration-300 flex items-center justify-center">
+                <i class="fa fa-trash mr-2"></i>
+                删除此帧
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 全局变量
+    let videoFile = null;
+    let frames = [];
+    let currentPage = 1;
+    let framesPerPage = 30;
+    let ffmpeg = null;
+    let isProcessing = false;
+    let startTime = 0;
+    let processedFrames = 0;
+    let totalFramesToProcess = 0;
+    let extractionStats = {
+      frameSizes: [],
+      extractionTimes: []
+    };
+    
+    // DOM 元素
+    const dropArea = document.getElementById('drop-area');
+    const fileInput = document.getElementById('file-input');
+    const fileInfo = document.getElementById('file-info');
+    const fileName = document.getElementById('file-name');
+    const fileSize = document.getElementById('file-size');
+    const removeFile = document.getElementById('remove-file');
+    const fpsMode = document.getElementById('fps-mode');
+    const intervalMode = document.getElementById('interval-mode');
+    const fpsSettings = document.getElementById('fps-settings');
+    const intervalSettings = document.getElementById('interval-settings');
+    const fpsValue = document.getElementById('fps-value');
+    const fpsDisplay = document.getElementById('fps-display');
+    const intervalValue = document.getElementById('interval-value');
+    const intervalDisplay = document.getElementById('interval-display');
+    const startExtraction = document.getElementById('start-extraction');
+    const cancelExtraction = document.getElementById('cancel-extraction');
+    const extractionProgress = document.getElementById('extraction-progress');
+    const progressBar = document.getElementById('progress-bar');
+    const progressPercentage = document.getElementById('progress-percentage');
+    const framesExtracted = document.getElementById('frames-extracted');
+    const estTimeRemaining = document.getElementById('est-time-remaining');
+    const noResults = document.getElementById('no-results');
+    const loadingResults = document.getElementById('loading-results');
+    const frameResults = document.getElementById('frame-results');
+    const frameGrid = document.getElementById('frame-grid');
+    const shownFrames = document.getElementById('shown-frames');
+    const totalFrames = document.getElementById('total-frames');
+    const prevPage = document.getElementById('prev-page');
+    const nextPage = document.getElementById('next-page');
+    const viewMode = document.getElementById('view-mode');
+    const selectAll = document.getElementById('select-all');
+    const downloadSelected = document.getElementById('download-selected');
+    const downloadAllZip = document.getElementById('download-all-zip');
+    const downloadAll7z = document.getElementById('download-all-7z');
+    const resetAll = document.getElementById('reset-all');
+    const frameModal = document.getElementById('frame-modal');
+    const closeModal = document.getElementById('close-modal');
+    const modalImage = document.getElementById('modal-image');
+    const modalTitle = document.getElementById('modal-title');
+    const modalFrameNumber = document.getElementById('modal-frame-number');
+    const modalTimestamp = document.getElementById('modal-timestamp');
+    const modalResolution = document.getElementById('modal-resolution');
+    const modalSize = document.getElementById('modal-size');
+    const downloadSingleFrame = document.getElementById('download-single-frame');
+    const setAsThumbnail = document.getElementById('set-as-thumbnail');
+    const deleteFrame = document.getElementById('delete-frame');
+    const navbar = document.getElementById('navbar');
+    const mobileMenuButton = document.getElementById('mobile-menu-button');
+    const mobileMenu = document.getElementById('mobile-menu');
+    
+    // 视频信息 DOM
+    const videoDuration = document.getElementById('video-duration');
+    const originalFps = document.getElementById('original-fps');
+    const videoResolution = document.getElementById('video-resolution');
+    const totalFramesCount = document.getElementById('total-frames-count');
+    const extractionMode = document.getElementById('extraction-mode');
+    const extractedFps = document.getElementById('extracted-fps');
+    const extractedFramesCount = document.getElementById('extracted-frames-count');
+    const processingTime = document.getElementById('processing-time');
+    
+    // 图表
+    let frameSizeChart = null;
+    let extractionSpeedChart = null;
+    
+    // 初始化应用
+    function initApp() {
+      // 初始化FFmpeg
+      initFFmpeg();
+      
+      // 事件监听器
+      setupEventListeners();
+      
+      // 初始化导航栏滚动效果
+      initNavbarScroll();
+      
+      // 初始化移动菜单
+      initMobileMenu();
+    }
+    
+    // 初始化FFmpeg
+    function initFFmpeg() {
+      // 检查浏览器兼容性
+      if (!window.Worker) {
+        alert('您的浏览器不支持Web Workers，无法使用此工具。请使用现代浏览器如Chrome、Firefox或Edge。');
+        return;
+      }
+      
+      // 创建FFmpeg实例
+      ffmpeg = FFmpeg.createFFmpeg({ log: true });
+    }
+    
+    // 设置事件监听器
+    function setupEventListeners() {
+      // 文件上传相关
+      fileInput.addEventListener('change', handleFileSelect);
+      ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        dropArea.addEventListener(eventName, preventDefaults, false);
+      });
+      
+      function preventDefaults(e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      
+      ['dragenter', 'dragover'].forEach(eventName => {
+        dropArea.addEventListener(eventName, highlight, false);
+      });
+      
+      ['dragleave', 'drop'].forEach(eventName => {
+        dropArea.addEventListener(eventName, unhighlight, false);
+      });
+      
+      function highlight() {
+        dropArea.classList.add('border-primary');
+        dropArea.classList.add('bg-primary/5');
+      }
+      
+      function unhighlight() {
+        dropArea.classList.remove('border-primary');
+        dropArea.classList.remove('bg-primary/5');
+      }
+      
+      dropArea.addEventListener('drop', handleDrop, false);
+      removeFile.addEventListener('click', removeSelectedFile);
+      
+      // 抽帧设置相关
+      fpsMode.addEventListener('change', toggleExtractionMode);
+      intervalMode.addEventListener('change', toggleExtractionMode);
+      fpsValue.addEventListener('input', updateFpsDisplay);
+      intervalValue.addEventListener('input', updateIntervalDisplay);
+      
+      // 抽帧操作相关
+      startExtraction.addEventListener('click', startFrameExtraction);
+      cancelExtraction.addEventListener('click', cancelFrameExtraction);
+      
+      // 分页控制
+      prevPage.addEventListener('click', goToPrevPage);
+      nextPage.addEventListener('click', goToNextPage);
+      
+      // 视图模式切换
+      viewMode.addEventListener('change', changeViewMode);
+      
+      // 选择和下载操作
+      selectAll.addEventListener('click', toggleSelectAll);
+      downloadSelected.addEventListener('click', downloadSelectedFrames);
+      downloadAllZip.addEventListener('click', downloadAllFramesAsZip);
+      downloadAll7z.addEventListener('click', downloadAllFramesAs7z);
+      resetAll.addEventListener('click', resetApplication);
+      
+      // 模态框控制
+      closeModal.addEventListener('click', closeFrameModal);
+      downloadSingleFrame.addEventListener('click', downloadCurrentFrame);
+      deleteFrame.addEventListener('click', deleteCurrentFrame);
+      
+      // 导航栏滚动效果
+      window.addEventListener('scroll', handleNavbarScroll);
+    }
+    
+    // 初始化导航栏滚动效果
+    function initNavbarScroll() {
+      if (window.scrollY > 10) {
+        navbar.classList.add('py-2');
+        navbar.classList.remove('py-3');
+        navbar.classList.add('shadow-lg');
+      } else {
+        navbar.classList.add('py-3');
+        navbar.classList.remove('py-2');
+        navbar.classList.remove('shadow-lg');
+      }
+    }
+    
+    // 处理导航栏滚动
+    function handleNavbarScroll() {
+      if (window.scrollY > 10) {
+        navbar.classList.add('py-2');
+        navbar.classList.remove('py-3');
+        navbar.classList.add('shadow-lg');
+      } else {
+        navbar.classList.add('py-3');
+        navbar.classList.remove('py-2');
+        navbar.classList.remove('shadow-lg');
+      }
+    }
+    
+    // 初始化移动菜单
+    function initMobileMenu() {
+      mobileMenuButton.addEventListener('click', () => {
+        mobileMenu.classList.toggle('hidden');
+      });
+      
+      // 点击菜单项后关闭菜单
+      const mobileMenuItems = mobileMenu.querySelectorAll('a');
+      mobileMenuItems.forEach(item => {
+        item.addEventListener('click', () => {
+          mobileMenu.classList.add('hidden');
+        });
+      });
+    }
+    
+    // 处理文件拖放
+    function handleDrop(e) {
+      const dt = e.dataTransfer;
+      const files = dt.files;
+      
+      if (files.length > 0) {
+        handleFiles(files);
+      }
+    }
+    
+    // 处理文件选择
+    function handleFileSelect(e) {
+      const files = e.target.files;
+      
+      if (files.length > 0) {
+        handleFiles(files);
+      }
+    }
+    
+    // 处理文件
+    function handleFiles(files) {
+      const file = files[0];
+      
+      if (file.type.startsWith('video/')) {
+        videoFile = file;
+        displayFileInfo(file);
+      } else {
+        alert('请选择视频文件！');
+      }
+    }
+    
+    // 显示文件信息
+    function displayFileInfo(file) {
+      fileName.textContent = file.name;
+      fileSize.textContent = formatFileSize(file.size);
+      fileInfo.classList.remove('hidden');
+    }
+    
+    // 移除选中的文件
+    function removeSelectedFile() {
+      videoFile = null;
+      fileInput.value = '';
+      fileInfo.classList.add('hidden');
+    }
+    
+    // 切换抽帧模式
+    function toggleExtractionMode() {
+      if (fpsMode.checked) {
+        fpsSettings.classList.remove('hidden');
+        intervalSettings.classList.add('hidden');
+      } else {
+        fpsSettings.classList.add('hidden');
+        intervalSettings.classList.remove('hidden');
+      }
+    }
+    
+    // 更新FPS显示
+    function updateFpsDisplay() {
+      fpsDisplay.textContent = `${fpsValue.value} FPS`;
+    }
+    
+    // 更新间隔显示
+    function updateIntervalDisplay() {
+      intervalDisplay.textContent = `${intervalValue.value} 帧`;
+    }
+    
+    // 开始抽帧
+    async function startFrameExtraction() {
+      if (!videoFile) {
+        alert('请先选择视频文件！');
+        return;
+      }
+      
+      if (isProcessing) {
+        return;
+      }
+      
+      // 重置状态
+      frames = [];
+      processedFrames = 0;
+      extractionStats = {
+        frameSizes: [],
+        extractionTimes: []
+      };
+      
+      // 显示进度
+      extractionProgress.classList.remove('hidden');
+      startExtraction.classList.add('hidden');
+      cancelExtraction.classList.remove('hidden');
+      noResults.classList.add('hidden');
+      loadingResults.classList.remove('hidden');
+      frameResults.classList.add('hidden');
+      
+      // 准备抽帧参数
+      const extractionParams = getExtractionParams();
+      
+      // 显示抽帧设置
+      updateExtractionStatsDisplay(extractionParams);
+      
+      // 加载FFmpeg核心
+      isProcessing = true;
+      startTime = Date.now();
+      
+      try {
+        if (!ffmpeg.isLoaded()) {
+          await ffmpeg.load();
+        }
+        
+        // 写入视频文件到FFmpeg文件系统
+        ffmpeg.FS('writeFile', videoFile.name, await readFileAsArrayBuffer(videoFile));
+        
+        // 分析视频获取信息
+        const videoInfo = await analyzeVideo(videoFile.name);
+        updateVideoInfoDisplay(videoInfo);
+        
+        // 计算要处理的总帧数
+        totalFramesToProcess = calculateTotalFramesToProcess(videoInfo, extractionParams);
+        
+        // 执行抽帧
+        await extractFrames(videoFile.name, extractionParams);
+        
+        // 抽帧完成
+        finishExtraction();
+      } catch (error) {
+        console.error('抽帧过程中发生错误:', error);
+        alert('抽帧过程中发生错误: ' + error.message);
+        resetExtractionUI();
+      } finally {
+        isProcessing = false;
+      }
+    }
+    
+    // 获取抽帧参数
+    function getExtractionParams() {
+      if (fpsMode.checked) {
+        return {
+          mode: 'fps',
+          value: parseInt(fpsValue.value)
+        };
+      } else {
+        return {
+          mode: 'interval',
+          value: parseInt(intervalValue.value)
+        };
+      }
+    }
+    
+    // 更新抽帧统计显示
+    function updateExtractionStatsDisplay(params) {
+      extractionMode.textContent = params.mode === 'fps' ? '按帧率' : '按间隔';
+      extractedFps.textContent = params.mode === 'fps' ? `${params.value} FPS` : '-';
+      extractedFramesCount.textContent = '-';
+      processingTime.textContent = '-';
+    }
+    
+    // 更新视频信息显示
+    function updateVideoInfoDisplay(info) {
+      videoDuration.textContent = formatTime(info.duration);
+      originalFps.textContent = `${info.fps} FPS`;
+      videoResolution.textContent = `${info.width} × ${info.height}`;
+      totalFramesCount.textContent = info.frames;
+    }
+    
+    // 计算要处理的总帧数
+    function calculateTotalFramesToProcess(videoInfo, extractionParams) {
+      if (extractionParams.mode === 'fps') {
+        // 按FPS抽帧
+        return Math.ceil(videoInfo.duration * extractionParams.value);
+      } else {
+        // 按间隔抽帧
+        return Math.ceil(videoInfo.frames / extractionParams.value);
+      }
+    }
+    
+    // 分析视频获取信息
+    async function analyzeVideo(filename) {
+      // 执行FFmpeg命令获取视频信息
+      await ffmpeg.run('-i', filename, '-hide_banner', '-show_streams', '-print_format', 'json', 'info.json');
+      
+      // 读取输出信息
+      const infoJson = ffmpeg.FS('readFile', 'info.json');
+      const info = JSON.parse(new TextDecoder().decode(infoJson));
+      
+      // 提取视频流信息
+      const videoStream = info.streams.find(stream => stream.codec_type === 'video');
+      
+      if (!videoStream) {
+        throw new Error('无法找到视频流信息');
+      }
+      
+      // 计算FPS
+      const fps = eval(videoStream.r_frame_rate);
+      
+      // 计算总帧数
+      const duration = parseFloat(videoStream.duration || 0);
+      const frames = Math.round(duration * fps);
+      
+      return {
+        duration: duration,
+        fps: fps,
+        width: videoStream.width,
+        height: videoStream.height,
+        frames: frames
+      };
+    }
+    
+    // 执行抽帧
+    async function extractFrames(filename, extractionParams) {
+      // 根据抽帧模式构建FFmpeg命令
+      let ffmpegArgs = [];
+      
+      if (extractionParams.mode === 'fps') {
+        // 按帧率抽帧
+        ffmpegArgs = [
+          '-i', filename,
+          '-r', extractionParams.value.toString(),
+          '-q:v', '1', // 最高质量
+          'frame_%04d.jpg'
+        ];
+      } else {
+        // 按间隔抽帧
+        ffmpegArgs = [
+          '-i', filename,
+          '-vf', `select=not(mod(n\\,${extractionParams.value}))`,
+          '-vsync', 'vfr',
+          '-q:v', '1', // 最高质量
+          'frame_%04d.jpg'
+        ];
+      }
+      
+      // 设置进度回调
+      ffmpeg.setProgress(progress => {
+        if (totalFramesToProcess > 0) {
+          // 估计已处理帧数
+          processedFrames = Math.round(progress.ratio * totalFramesToProcess);
+          
+          // 更新进度UI
+          updateProgressUI(processedFrames, totalFramesToProcess);
+        }
+      });
+      
+      // 执行FFmpeg命令
+      await ffmpeg.run(...ffmpegArgs);
+      
+      // 获取所有提取的帧文件
+      const files = ffmpeg.FS('readdir', '.');
+      const frameFiles = files.filter(file => file.startsWith('frame_') && file.endsWith('.jpg'));
+      
+      // 按文件名排序
+      frameFiles.sort((a, b) => {
+        const numA = parseInt(a.match(/\d+/)[0]);
+        const numB = parseInt(b.match(/\d+/)[0]);
+        return numA - numB;
+      });
+      
+      // 加载帧数据
+      let frameNumber = 1;
+      for (const file of frameFiles) {
+        const startFrameTime = Date.now();
+        
+        // 读取帧文件内容
+        const fileData = ffmpeg.FS('readFile', file);
+        
+        // 转换为Base64
+        const base64 = uint8ArrayToBase64(fileData);
+        const dataUrl = `data:image/jpeg;base64,${base64}`;
+        
+        // 创建帧对象
+        const frame = {
+          id: frameNumber,
+          filename: file,
+          dataUrl: dataUrl,
+          size: fileData.length,
+          selected: false
+        };
+        
+        frames.push(frame);
+        
+        // 记录帧大小和处理时间
+        extractionStats.frameSizes.push(fileData.length);
+        extractionStats.extractionTimes.push(Date.now() - startFrameTime);
+        
+        frameNumber++;
+        
+        // 更新进度UI
+        updateProgressUI(frames.length, totalFramesToProcess);
+      }
+    }
+    
+    // 更新进度UI
+    function updateProgressUI(processed, total) {
+      const percentage = Math.min(Math.round((processed / total) * 100), 100);
+      
+      progressBar.style.width = `${percentage}%`;
+      progressPercentage.textContent = `${percentage}%`;
+      framesExtracted.textContent = `已抽取: ${processed} 帧`;
+      
+      // 计算估计剩余时间
+      if (processed > 0 && percentage < 100) {
+        const elapsedTime = (Date.now() - startTime) / 1000; // 秒
+        const estimatedTotalTime = (elapsedTime / processed) * total;
+        const remainingTime = estimatedTotalTime - elapsedTime;
+        
+        estTimeRemaining.textContent = `剩余时间: ${formatTime(remainingTime)}`;
+      }
+    }
+    
+    // 完成抽帧
+    function finishExtraction() {
+      // 更新统计信息
+      const totalTime = (Date.now() - startTime) / 1000; // 秒
+      processingTime.textContent = formatTime(totalTime);
+      extractedFramesCount.textContent = frames.length;
+      
+      // 更新UI
+      loadingResults.classList.add('hidden');
+      frameResults.classList.remove('hidden');
+      cancelExtraction.classList.add('hidden');
+      startExtraction.classList.remove('hidden');
+      
+      // 显示帧
+      renderFrames();
+      
+      // 创建图表
+      createCharts();
+    }
+    
+    // 重置抽帧UI
+    function resetExtractionUI() {
+      extractionProgress.classList.add('hidden');
+      loadingResults.classList.add('hidden');
+      noResults.classList.remove('hidden');
+      frameResults.classList.add('hidden');
+      startExtraction.classList.remove('hidden');
+      cancelExtraction.classList.add('hidden');
+    }
+    
+    // 取消抽帧
+    function cancelFrameExtraction() {
+      if (!isProcessing) {
+        return;
+      }
+      
+      // 终止FFmpeg进程
+      ffmpeg.exit();
+      
+      // 重置状态
+      isProcessing = false;
+      resetExtractionUI();
+    }
+    
+    // 渲染帧
+    function renderFrames() {
+      // 清空帧网格
+      frameGrid.innerHTML = '';
+      
+      // 计算当前页的帧
+      const startIndex = (currentPage - 1) * framesPerPage;
+      const endIndex = Math.min(startIndex + framesPerPage, frames.length);
+      const currentFrames = frames.slice(startIndex, endIndex);
+      
+      // 更新显示计数
+      shownFrames.textContent = currentFrames.length;
+      totalFrames.textContent = frames.length;
+      
+      // 更新分页按钮状态
+      prevPage.disabled = currentPage === 1;
+      nextPage.disabled = endIndex >= frames.length;
+      
+      // 创建帧元素
+      currentFrames.forEach(frame => {
+        const frameElement = createFrameElement(frame);
+        frameGrid.appendChild(frameElement);
+      });
+    }
+    
+    // 创建帧元素
+    function createFrameElement(frame) {
+      const frameElement = document.createElement('div');
+      frameElement.className = 'relative group transition-all duration-300 hover:shadow-lg';
+      
+      const isSelected = frame.selected ? 'border-primary bg-primary/10' : 'border-gray-200';
+      
+      frameElement.innerHTML = `
+        <div class="border-2 ${isSelected} rounded-lg overflow-hidden cursor-pointer aspect-video flex items-center justify-center">
+          <img src="${frame.dataUrl}" alt="视频帧 ${frame.id}" class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105">
+          <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-opacity duration-300 flex items-center justify-center opacity-0 group-hover:opacity-100">
+            <button class="bg-white text-primary p-2 rounded-full shadow-md transform -translate-y-4 group-hover:translate-y-0 transition-transform duration-300" data-id="${frame.id}">
+              <i class="fa fa-search-plus"></i>
+            </button>
+          </div>
+        </div>
+        <div class="absolute top-2 right-2 z-10">
+          <input type="checkbox" id="frame-${frame.id}" class="sr-only peer" ${frame.selected ? 'checked' : ''} data-id="${frame.id}">
+          <label for="frame-${frame.id}" class="w-6 h-6 flex items-center justify-center rounded-full border-2 ${frame.selected ? 'border-primary bg-primary' : 'border-gray-300 bg-white'} cursor-pointer transition-all duration-300">
+            <i class="fa fa-check text-white ${frame.selected ? '' : 'opacity-0'} text-xs"></i>
+          </label>
+        </div>
+        <div class="mt-2 flex justify-between items-center">
+          <span class="text-sm font-medium">帧 ${frame.id}</span>
+          <span class="text-xs text-gray-500">${formatFileSize(frame.size)}</span>
+        </div>
+      `;
+      
+      // 添加事件监听器
+      const checkbox = frameElement.querySelector(`input[data-id="${frame.id}"]`);
+      const label = frameElement.querySelector(`label[data-id="${frame.id}"]`);
+      const viewButton = frameElement.querySelector('.fa-search-plus').parentElement;
+      const imageContainer = frameElement.querySelector('.border-2');
+      
+      checkbox.addEventListener('change', () => {
+        frame.selected = checkbox.checked;
+        updateFrameSelectionUI(frameElement, frame.selected);
+      });
+      
+      label.addEventListener('click', (e) => {
+        e.stopPropagation();
+        checkbox.click();
+      });
+      
+      viewButton.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openFrameModal(frame);
+      });
+      
+      imageContainer.addEventListener('click', () => {
+        openFrameModal(frame);
+      });
+      
+      return frameElement;
+    }
+    
+    // 更新帧选择状态UI
+    function updateFrameSelectionUI(element, isSelected) {
+      if (isSelected) {
+        element.querySelector('.border-2').classList.remove('border-gray-200');
+        element.querySelector('.border-2').classList.add('border-primary', 'bg-primary/10');
+        element.querySelector('label').classList.remove('border-gray-300', 'bg-white');
+        element.querySelector('label').classList.add('border-primary', 'bg-primary');
+        element.querySelector('i').classList.remove('opacity-0');
+      } else {
+        element.querySelector('.border-2').classList.remove('border-primary', 'bg-primary/10');
+        element.querySelector('.border-2').classList.add('border-gray-200');
+        element.querySelector('label').classList.remove('border-primary', 'bg-primary');
+        element.querySelector('label').classList.add('border-gray-300', 'bg-white');
+        element.querySelector('i').classList.add('opacity-0');
+      }
+    }
+    
+    // 打开帧详情模态框
+    function openFrameModal(frame) {
+      // 更新模态框内容
+      modalImage.src = frame.dataUrl;
+      modalTitle.textContent = `帧 ${frame.id}`;
+      modalFrameNumber.textContent = frame.id;
+      
+      // 尝试从文件名中提取时间戳
+      const timeMatch = frame.filename.match(/frame_(\d+)/);
+      if (timeMatch && timeMatch[1]) {
+        const frameNum = parseInt(timeMatch[1]);
+        const fps = parseInt(extractedFps.textContent);
+        const timestamp = (frameNum / fps) || 0;
+        modalTimestamp.textContent = formatTime(timestamp);
+      } else {
+        modalTimestamp.textContent = '-';
+      }
+      
+      // 获取图片尺寸
+      const img = new Image();
+      img.onload = function() {
+        modalResolution.textContent = `${img.width} × ${img.height}`;
+      };
+      img.src = frame.dataUrl;
+      
+      modalSize.textContent = formatFileSize(frame.size);
+      
+      // 存储当前帧ID
+      downloadSingleFrame.dataset.id = frame.id;
+      deleteFrame.dataset.id = frame.id;
+      
+      // 显示模态框
+      frameModal.classList.remove('hidden');
+    }
+    
+    // 关闭帧详情模态框
+    function closeFrameModal() {
+      frameModal.classList.add('hidden');
+    }
+    
+    // 下载当前帧
+    function downloadCurrentFrame() {
+      const frameId = parseInt(downloadSingleFrame.dataset.id);
+      const frame = frames.find(f => f.id === frameId);
+      
+      if (frame) {
+        downloadDataUrl(frame.dataUrl, frame.filename);
+      }
+    }
+    
+    // 删除当前帧
+    function deleteCurrentFrame() {
+      if (!confirm('确定要删除此帧吗？此操作无法撤销。')) {
+        return;
+      }
+      
+      const frameId = parseInt(deleteFrame.dataset.id);
+      const frameIndex = frames.findIndex(f => f.id === frameId);
+      
+      if (frameIndex !== -1) {
+        frames.splice(frameIndex, 1);
+        
+        // 更新帧ID
+        frames.forEach((frame, index) => {
+          frame.id = index + 1;
+        });
+        
+        // 重新渲染帧
+        renderFrames();
+        
+        // 更新统计信息
+        extractedFramesCount.textContent = frames.length;
+        
+        // 关闭模态框
+        closeFrameModal();
+      }
+    }
+    
+    // 前往上一页
+    function goToPrevPage() {
+      if (currentPage > 1) {
+        currentPage--;
+        renderFrames();
+      }
+    }
+    
+    // 前往下一页
+    function goToNextPage() {
+      if ((currentPage * framesPerPage) < frames.length) {
+        currentPage++;
+        renderFrames();
+      }
+    }
+    
+    // 更改视图模式
+    function changeViewMode() {
+      if (viewMode.value === 'grid') {
+        frameGrid.classList.remove('grid-cols-1');
+        frameGrid.classList.add('grid-cols-2', 'sm:grid-cols-3', 'md:grid-cols-4', 'lg:grid-cols-5', 'xl:grid-cols-6');
+      } else {
+        frameGrid.classList.remove('grid-cols-2', 'sm:grid-cols-3', 'md:grid-cols-4', 'lg:grid-cols-5', 'xl:grid-cols-6');
+        frameGrid.classList.add('grid-cols-1');
+      }
+    }
+    
+    // 切换全选状态
+    function toggleSelectAll() {
+      const allSelected = frames.every(frame => frame.selected);
+      
+      frames.forEach(frame => {
+        frame.selected = !allSelected;
+      });
+      
+      renderFrames();
+    }
+    
+    // 下载选中的帧
+    function downloadSelectedFrames() {
+      const selectedFrames = frames.filter(frame => frame.selected);
+      
+      if (selectedFrames.length === 0) {
+        alert('请先选择要下载的帧！');
+        return;
+      }
+      
+      if (selectedFrames.length === 1) {
+        // 只有一个选中项，直接下载
+        downloadDataUrl(selectedFrames[0].dataUrl, selectedFrames[0].filename);
+      } else {
+        // 多个选中项，打包下载
+        createZip(selectedFrames, 'selected_frames.zip');
+      }
+    }
+    
+    // 下载所有帧为ZIP
+    function downloadAllFramesAsZip() {
+      if (frames.length === 0) {
+        alert('没有可下载的帧！');
+        return;
+      }
+      
+      createZip(frames, 'all_frames.zip');
+    }
+    
+    // 下载所有帧为7Z (模拟)
+    function downloadAllFramesAs7z() {
+      if (frames.length === 0) {
+        alert('没有可下载的帧！');
+        return;
+      }
+      
+      // 由于浏览器限制，实际上这里还是使用ZIP
+      alert('注意：浏览器环境下无法直接生成7Z文件，将使用ZIP格式代替。');
+      createZip(frames, 'all_frames.zip');
+    }
+    
+    // 创建ZIP文件
+    function createZip(framesToZip, zipFilename) {
+      const zip = new JSZip();
+      
+      // 添加帧到ZIP
+      framesToZip.forEach(frame => {
+        // 从dataUrl提取二进制数据
+        const dataUrlParts = frame.dataUrl.split(',');
+        const byteCharacters = atob(dataUrlParts[1]);
+        const byteNumbers = new Array(byteCharacters.length);
+        
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        
+        const byteArray = new Uint8Array(byteNumbers);
+        zip.file(frame.filename, byteArray);
+      });
+      
+      // 生成并下载ZIP文件
+      zip.generateAsync({ type: 'blob' }).then(content => {
+        downloadBlob(content, zipFilename);
+      });
+    }
+    
+    // 重置应用
+    function resetApplication() {
+      if (isProcessing) {
+        if (!confirm('正在抽帧中，确定要重置吗？')) {
+          return;
+        }
+        
+        // 终止FFmpeg进程
+        ffmpeg.exit();
+        isProcessing = false;
+      }
+      
+      // 重置状态
+      videoFile = null;
+      frames = [];
+      currentPage = 1;
+      processedFrames = 0;
+      totalFramesToProcess = 0;
+      extractionStats = {
+        frameSizes: [],
+        extractionTimes: []
+      };
+      
+      // 重置UI
+      fileInput.value = '';
+      fileInfo.classList.add('hidden');
+      resetExtractionUI();
+      
+      // 重置统计信息
+      videoDuration.textContent = '-';
+      originalFps.textContent = '-';
+      videoResolution.textContent = '-';
+      totalFramesCount.textContent = '-';
+      extractionMode.textContent = '-';
+      extractedFps.textContent = '-';
+      extractedFramesCount.textContent = '-';
+      processingTime.textContent = '-';
+      
+      // 销毁图表
+      if (frameSizeChart) {
+        frameSizeChart.destroy();
+        frameSizeChart = null;
+      }
+      
+      if (extractionSpeedChart) {
+        extractionSpeedChart.destroy();
+        extractionSpeedChart = null;
+      }
+    }
+    
+    // 创建图表
+    function createCharts() {
+      // 销毁现有图表
+      if (frameSizeChart) {
+        frameSizeChart.destroy();
+      }
+      
+      if (extractionSpeedChart) {
+        extractionSpeedChart.destroy();
+      }
+      
+      // 准备帧大小数据
+      const sizeData = extractionStats.frameSizes.slice(0, 100); // 限制为前100个帧
+      const sizeLabels = sizeData.map((_, index) => `帧 ${index + 1}`);
+      const sizeValues = sizeData.map(size => size / 1024); // KB
+      
+      // 创建帧大小图表
+      const sizeCtx = document.getElementById('frame-size-chart').getContext('2d');
+      frameSizeChart = new Chart(sizeCtx, {
+        type: 'bar',
+        data: {
+          labels: sizeLabels,
+          datasets: [{
+            label: '帧大小 (KB)',
+            data: sizeValues,
+            backgroundColor: 'rgba(22, 93, 255, 0.6)',
+            borderColor: 'rgba(22, 93, 255, 1)',
+            borderWidth: 1
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: {
+              beginAtZero: true
+            }
+          }
+        }
+      });
+      
+      // 准备抽帧速度数据
+      const speedData = extractionStats.extractionTimes.slice(0, 100); // 限制为前100个帧
+      const speedLabels = speedData.map((_, index) => `帧 ${index + 1}`);
+      
+      // 创建抽帧速度图表
+      const speedCtx = document.getElementById('extraction-speed-chart').getContext('2d');
+      extractionSpeedChart = new Chart(speedCtx, {
+        type: 'line',
+        data: {
+          labels: speedLabels,
+          datasets: [{
+            label: '处理时间 (毫秒)',
+            data: speedData,
+            backgroundColor: 'rgba(54, 207, 201, 0.2)',
+            borderColor: 'rgba(54, 207, 201, 1)',
+            borderWidth: 2,
+            tension: 0.1
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: {
+              beginAtZero: true
+            }
+          }
+        }
+      });
+    }
+    
+    // 工具函数：读取文件为ArrayBuffer
+    function readFileAsArrayBuffer(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsArrayBuffer(file);
+      });
+    }
+    
+    // 工具函数：Uint8Array转Base64
+    function uint8ArrayToBase64(array) {
+      let result = '';
+      const chunkSize = 8192;
+      
+      for (let i = 0; i < array.length; i += chunkSize) {
+        const chunk = array.subarray(i, i + chunkSize);
+        result += String.fromCharCode.apply(null, chunk);
+      }
+      
+      return btoa(result);
+    }
+    
+    // 工具函数：下载dataUrl
+    function downloadDataUrl(dataUrl, filename) {
+      const link = document.createElement('a');
+      link.href = dataUrl;
+      link.download = filename;
+      link.click();
+    }
+    
+    // 工具函数：下载Blob
+    function downloadBlob(blob, filename) {
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(link.href);
+    }
+    
+    // 工具函数：格式化文件大小
+    function formatFileSize(bytes) {
+      if (bytes === 0) return '0 Bytes';
+      
+      const k = 1024;
+      const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+    
+    // 工具函数：格式化时间
+    function formatTime(seconds) {
+      if (seconds < 60) {
+        return `${seconds.toFixed(1)} 秒`;
+      } else if (seconds < 3600) {
+        const minutes = Math.floor(seconds / 60);
+        const remainingSeconds = Math.round(seconds % 60);
+        return `${minutes} 分 ${remainingSeconds} 秒`;
+      } else {
+        const hours = Math.floor(seconds / 3600);
+        const remainingMinutes = Math.floor((seconds % 3600) / 60);
+        const remainingSeconds = Math.round(seconds % 60);
+        return `${hours} 时 ${remainingMinutes} 分 ${remainingSeconds} 秒`;
+      }
+    }
+    
+    // 启动应用
+    document.addEventListener('DOMContentLoaded', initApp);
+  </script>
+</body>
+</html>
+    
